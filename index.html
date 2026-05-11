@@ -1,0 +1,823 @@
+<!DOCTYPE html>
+<script type="application/json" id="cowork-artifact-meta">
+{
+  "name": "Olomouc Lunch Menu",
+  "schemaVersion": 1,
+  "description": "Today's lunch menus from 16 Olomouc restaurants (olomouc.cz) sorted by distance from Hněvotínská 5. Shows similarity tags across restaurants, distance badges, and a 🏆 Rank button per meal that calls Claude to rate healthiness and pub-heaviness. Menza UPOL linked separately (requires login). Data scraped May 11 2026; refresh button re-fetches live.",
+  "mcpTools": [
+    "mcp__Windows-MCP__Scrape"
+  ],
+  "mcpServerNames": [
+    "Windows-MCP"
+  ]
+}
+</script>
+<html lang="cs">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Polední menu · Olomouc</title>
+<style>
+:root { color-scheme: light; }
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+body {
+  font-family: Georgia, 'Palatino Linotype', serif;
+  background: #c9a96e;
+  min-height: 100vh;
+  overflow-x: hidden;
+  color: #1a0f02;
+}
+
+/* Animated background */
+.bg {
+  position: fixed; inset: 0; z-index: 0;
+  background: linear-gradient(135deg, #b8895a 0%, #d4aa6a 25%, #e8d090 50%, #c9a050 75%, #b07830 100%);
+}
+.blob {
+  position: absolute; border-radius: 50%; filter: blur(80px); opacity: 0.55;
+  animation: drift 14s ease-in-out infinite alternate;
+}
+.blob1 { width:600px;height:500px; background:#e8c870; top:-100px; left:-100px; animation-delay:0s; }
+.blob2 { width:500px;height:600px; background:#d4956a; top:30%; right:-150px; animation-delay:-5s; }
+.blob3 { width:400px;height:400px; background:#f0d890; bottom:-50px; left:30%; animation-delay:-9s; }
+@keyframes drift { from{transform:translate(0,0) scale(1)} to{transform:translate(30px,20px) scale(1.07)} }
+
+.content { position: relative; z-index: 1; padding: 24px 20px 60px; max-width: 1400px; margin: 0 auto; }
+
+/* Glass utility */
+.glass {
+  background: rgba(255,250,240,0.52);
+  backdrop-filter: blur(22px) saturate(1.9);
+  -webkit-backdrop-filter: blur(22px) saturate(1.9);
+  border: 1px solid rgba(255,240,200,0.75);
+  box-shadow: 0 8px 40px rgba(100,60,10,0.18), inset 0 1px 0 rgba(255,255,255,0.65);
+}
+
+/* Header */
+header { text-align:center; margin-bottom: 28px; }
+.header-glass {
+  display: inline-block;
+  padding: 28px 48px 22px;
+  border-radius: 28px;
+}
+.eyebrow {
+  display: block;
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: #8b6020;
+  margin-bottom: 8px;
+}
+h1 {
+  font-size: clamp(28px, 5vw, 52px);
+  font-weight: normal;
+  letter-spacing: 0.04em;
+  color: #2d1205;
+  line-height: 1.1;
+}
+.subtitle {
+  display: block;
+  font-size: 13px;
+  color: #7a5020;
+  margin-top: 6px;
+  font-style: italic;
+}
+.header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 16px;
+}
+.stat-pill {
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #6b4815;
+  background: rgba(180,130,40,0.18);
+  border: 1px solid rgba(180,130,40,0.3);
+  padding: 5px 14px;
+  border-radius: 20px;
+}
+.refresh-btn {
+  font-family: inherit;
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #5a3010;
+  background: rgba(255,200,80,0.3);
+  border: 1px solid rgba(200,150,40,0.5);
+  padding: 6px 18px;
+  border-radius: 20px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.refresh-btn:hover { background: rgba(255,200,80,0.5); transform: scale(1.03); }
+
+/* Filter bar */
+.filter-bar {
+  display: flex;
+  justify-content: center;
+  gap: 10px;
+  margin-bottom: 28px;
+  flex-wrap: wrap;
+}
+.filter-btn {
+  font-family: inherit;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #4a2a08;
+  padding: 7px 20px;
+  border-radius: 24px;
+  border: 1px solid rgba(200,150,50,0.5);
+  background: rgba(255,240,200,0.4);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.filter-btn:hover, .filter-btn.active {
+  background: rgba(255,220,100,0.6);
+  border-color: rgba(180,130,40,0.7);
+}
+
+/* Status banner */
+.status-bar {
+  text-align: center;
+  font-size: 12px;
+  color: #6b4815;
+  margin-bottom: 20px;
+  min-height: 18px;
+  font-style: italic;
+}
+
+/* Grid */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  gap: 20px;
+}
+
+/* Restaurant card */
+.card {
+  border-radius: 22px;
+  overflow: hidden;
+  transition: transform 0.25s, box-shadow 0.25s;
+}
+.card:hover { transform: translateY(-3px); box-shadow: 0 16px 50px rgba(100,60,10,0.25), inset 0 1px 0 rgba(255,255,255,0.65); }
+.card.closed { opacity: 0.55; }
+
+.card-header {
+  padding: 18px 20px 14px;
+  border-bottom: 1px solid rgba(180,130,40,0.2);
+  position: relative;
+}
+.card-name {
+  font-size: 15px;
+  font-weight: bold;
+  color: #2d1205;
+  letter-spacing: 0.02em;
+  margin-bottom: 4px;
+  line-height: 1.3;
+}
+.card-address {
+  font-size: 11px;
+  color: #7a5020;
+  font-style: italic;
+}
+.card-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+.badge {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-family: system-ui, sans-serif;
+}
+.badge-dist-near  { background: rgba(60,180,80,0.2);  color: #1a5c28; border: 1px solid rgba(60,180,80,0.4); }
+.badge-dist-mid   { background: rgba(200,160,20,0.2); color: #6b5010; border: 1px solid rgba(200,160,20,0.4); }
+.badge-dist-far   { background: rgba(200,80,30,0.15); color: #7a2a10; border: 1px solid rgba(200,80,30,0.3); }
+.badge-hours      { background: rgba(100,150,220,0.15); color: #2a4a7a; border: 1px solid rgba(100,150,220,0.3); }
+.badge-closed     { background: rgba(180,50,50,0.15); color: #7a1a1a; border: 1px solid rgba(180,50,50,0.3); }
+.badge-delivery   { background: rgba(150,100,200,0.15); color: #4a2a6a; border: 1px solid rgba(150,100,200,0.3); }
+
+/* Soup row */
+.soup-row {
+  padding: 10px 20px;
+  background: rgba(230,170,40,0.12);
+  border-bottom: 1px solid rgba(180,130,40,0.15);
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+}
+.soup-label {
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #8b6020;
+  font-family: system-ui, sans-serif;
+  white-space: nowrap;
+}
+.soup-name { color: #3d2005; font-style: italic; flex: 1; }
+.soup-price { color: #8b6020; font-size: 11px; white-space: nowrap; }
+
+/* Meals list */
+.meals-list { padding: 8px 0; }
+.meal-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 9px 20px;
+  border-bottom: 1px solid rgba(180,130,40,0.1);
+  transition: background 0.15s;
+}
+.meal-row:last-child { border-bottom: none; }
+.meal-row:hover { background: rgba(255,240,200,0.35); }
+.meal-info { flex: 1; min-width: 0; }
+.meal-name {
+  font-size: 13px;
+  color: #2d1205;
+  line-height: 1.4;
+}
+.meal-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+.sim-tag {
+  font-size: 9px;
+  padding: 2px 7px;
+  border-radius: 8px;
+  font-family: system-ui, sans-serif;
+  letter-spacing: 0.04em;
+}
+.meal-right { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; flex-shrink: 0; }
+.meal-price {
+  font-size: 13px;
+  font-weight: bold;
+  color: #5a3010;
+  white-space: nowrap;
+}
+.rank-btn {
+  font-size: 11px;
+  padding: 3px 9px;
+  border-radius: 10px;
+  border: 1px solid rgba(180,130,40,0.4);
+  background: rgba(255,220,80,0.25);
+  color: #5a3810;
+  cursor: pointer;
+  font-family: system-ui, sans-serif;
+  transition: all 0.2s;
+  white-space: nowrap;
+}
+.rank-btn:hover { background: rgba(255,200,60,0.5); }
+.rank-btn:disabled { opacity: 0.5; cursor: wait; }
+
+/* Rank result inline */
+.rank-result {
+  margin: 0 20px 10px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(255,248,220,0.7);
+  border: 1px solid rgba(180,140,40,0.3);
+  font-size: 12px;
+  line-height: 1.6;
+  color: #3d2005;
+  font-family: system-ui, sans-serif;
+  display: none;
+}
+.rank-result.visible { display: block; }
+.rank-result .rank-meal-name { font-weight: 600; font-size: 11px; color: #6b4010; margin-bottom: 6px; font-style: italic; }
+
+/* Closed overlay */
+.closed-note {
+  padding: 20px;
+  text-align: center;
+  color: #7a4020;
+  font-style: italic;
+  font-size: 13px;
+}
+
+/* Menza card */
+.menza-section {
+  margin-top: 28px;
+}
+.menza-card {
+  padding: 24px 28px;
+  border-radius: 22px;
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+.menza-icon { font-size: 36px; }
+.menza-info h3 { font-size: 16px; color: #2d1205; margin-bottom: 4px; }
+.menza-info p { font-size: 12px; color: #7a5020; font-style: italic; line-height: 1.5; }
+.menza-link {
+  display: inline-block;
+  margin-top: 10px;
+  font-size: 12px;
+  color: #4a6090;
+  text-decoration: none;
+  border-bottom: 1px solid rgba(74,96,144,0.4);
+  font-family: system-ui, sans-serif;
+}
+.menza-link:hover { color: #2a4070; }
+
+/* Legend */
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+  margin-top: 20px;
+  font-size: 11px;
+  color: #6b4815;
+  font-family: system-ui, sans-serif;
+}
+.legend-item { display: flex; align-items: center; gap: 5px; }
+
+/* Loading overlay */
+#loading {
+  position: fixed; inset: 0; z-index: 100;
+  background: rgba(180,130,50,0.4);
+  backdrop-filter: blur(8px);
+  display: flex; align-items: center; justify-content: center;
+  font-size: 18px; color: #2d1205;
+  font-family: Georgia, serif;
+  display: none;
+}
+</style>
+</head>
+<body>
+<div class="bg">
+  <div class="blob blob1"></div>
+  <div class="blob blob2"></div>
+  <div class="blob blob3"></div>
+</div>
+<div id="loading">Načítám menu…</div>
+
+<div class="content">
+  <header>
+    <div class="header-glass glass">
+      <span class="eyebrow">Hněvotínská 5 · Olomouc</span>
+      <h1>Polední menu</h1>
+      <span class="subtitle" id="date-subtitle">načítám datum…</span>
+      <div class="header-actions">
+        <span class="stat-pill" id="rest-count">— restaurací</span>
+        <button class="refresh-btn" onclick="loadData()">↻ Aktualizovat</button>
+      </div>
+    </div>
+  </header>
+
+  <div class="filter-bar">
+    <button class="filter-btn active" onclick="setSort('dist',this)">📍 Vzdálenost</button>
+    <button class="filter-btn" onclick="setSort('price',this)">💰 Cena (min)</button>
+    <button class="filter-btn" onclick="setSort('pop',this)">⭐ Oblíbenost</button>
+  </div>
+
+  <div class="status-bar" id="status"></div>
+
+  <div class="grid" id="grid"></div>
+
+  <div class="menza-section">
+    <div class="glass menza-card">
+      <div class="menza-icon">🎓</div>
+      <div class="menza-info">
+        <h3>WebKredit – Menza UPOL</h3>
+        <p>Systém vyžaduje JavaScript a přihlášení přes UPOl účet.<br>
+           Jídelníček je dostupný po přihlášení na portálu WebKredit.</p>
+        <a class="menza-link" href="https://menza.upol.cz/webkredit2/Ordering/Menu" target="_blank">
+          → Otevřít menza.upol.cz ↗
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <div class="legend">
+    <span class="legend-item"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:rgba(60,180,80,0.6)"></span> &lt; 600 m</span>
+    <span class="legend-item"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:rgba(200,160,20,0.6)"></span> 600 m – 1,2 km</span>
+    <span class="legend-item"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:rgba(200,80,30,0.6)"></span> &gt; 1,2 km</span>
+  </div>
+</div>
+
+<script>
+// ── DATA ────────────────────────────────────────────────────────────────────
+const HOME = [49.5870, 17.2595]; // Hněvotínská 5, Olomouc
+
+const RESTAURANTS = [
+  { id:'senimo', name:'RESTAURACE SENIMO', address:'Pasteurova 905/10', phone:null,
+    hours:'11:00–14:00', coords:[49.5865,17.2600], fav:79118, closed:false, delivery:false,
+    note:null, soup:'Kapustová polévka', soupPrice:30,
+    meals:[
+      {name:'100g Smažený camembert, brambory vařené, tatarská omáčka', price:155},
+      {name:'150g Rybí filé na másle a kmíně, brambory vařené, mrkvový salát', price:149},
+      {name:'150g Pikantní kuřecí a vepřové nudličky, zeleninová rýže', price:145},
+      {name:'350g Těstovinový salát s kuřecím masem, zeleninou a dresinkem', price:139},
+      {name:'200g Uzená vepřová panenka plněná sušenými švestkami, grilované brambory, chilli omáčka', price:219},
+    ]},
+  { id:'viktoria', name:'Restaurace VIKTORIA', address:'Školní 2a', phone:null,
+    hours:'11:00–14:45', coords:[49.5883,17.2556], fav:73804, closed:false, delivery:false,
+    note:null, soup:'Špenátová', soupPrice:null,
+    meals:[
+      {name:'Houbová omáčka s pravými hříbky a vařenými vejci, petrželkové brambory s máslem', price:189},
+      {name:'Kuřecí játra na zelenině s jasmínovou rýží, zelný salát', price:199},
+      {name:'Fresca pasta Aglio olio e peperoncino s grilovaným kuřecím steakem', price:209},
+      {name:'Masová pánev s křupavou zeleninou a pečenými brambory s rozmarýnem', price:209},
+      {name:'Grilovaný filet lososa s citronem a koprem, špenátové brambory', price:239},
+    ]},
+  { id:'caruso', name:'Restaurant Penzion CARUSO', address:'Střední Novosadská 30', phone:'585 435 721',
+    hours:'10:30–15:00', coords:[49.5893,17.2521], fav:75429, closed:false, delivery:false,
+    note:null, soup:'Kapustová s klobáskou', soupPrice:null,
+    meals:[
+      {name:'Pečený vepřový buček, bystročické zelí, houskový knedlík', price:129},
+      {name:'Vepřové kostky na žampionech, těstoviny', price:135},
+      {name:'Hrachová kaše, uzená kladenská pečeně, cibulka, chléb, okurek', price:135},
+      {name:'Smažené tvarůžky s poličanem, hranolky, tatarská omáčka', price:175},
+      {name:'Přírodní vepřové medailonky z kotletky, jasmínová rýže, vanilková zmrzlina', price:185},
+      {name:'Kuřecí steak na baby karotce, vařené brambory, pažitkový dip', price:190},
+    ]},
+  { id:'urytire', name:'Restaurace U RYTÍŘE', address:'Letců 2A', phone:'585 423 726',
+    hours:'10:30–14:00', coords:[49.5899,17.2512], fav:79314, closed:false, delivery:false,
+    note:null, soup:'Špenátová s vejcem', soupPrice:null,
+    meals:[
+      {name:'120g Kuřecí prsa Madeta, americké brambory', price:159},
+      {name:'120g Vepřová směs po Znojemsku, dušená rýže', price:159},
+      {name:'150g Smažené rybí filé, šťouchané brambory', price:159},
+      {name:'300g Gnocchi se sušenými rajčaty, medvědím česnekem a sýrem Grana padano', price:155},
+      {name:'350g Zeleninový salát s kuřecím masem, krutony, Grana Padano', price:155},
+    ]},
+  { id:'porto', name:'PORTO – Restaurant Pizzeria', address:'Jeremenkova 103/23', phone:'972 740 459',
+    hours:'10:30–15:00', coords:[49.5931,17.2495], fav:81962, closed:false, delivery:true,
+    note:null, soup:'Hrachová s kořenovou zeleninou a špekem – zdarma k menu', soupPrice:45,
+    meals:[
+      {name:'350g Zeleninové rizoto s houbami a sýrem, sterilovaný okurek', price:139},
+      {name:'140g Vepřová krkovička na česneku a kmínu, kysané zelí, domácí bramborové nočky', price:159},
+      {name:'100g Smažený sýr se šunkou, vařené brambory, domácí tatarská omáčka', price:159},
+      {name:'140g Maďarský vepřový perkelt, vařené těstoviny', price:159},
+      {name:'350g Pestrý zeleninový salát s vařeným vejcem a křupavou slaninkou', price:159},
+      {name:'140g Konfitované kachní prso, švestková omáčka, bramborové dukátky', price:179},
+      {name:'Pizza Calabrese – tomat, mozzarella, šunka, salám, slanina, olivy', price:189},
+      {name:'150g Smažený duel řízků (kuřecí + vepřová kotleta), bramborový salát', price:199},
+      {name:'200g Hamburger – mleté hovězí, pikantní hořčicový dresink, mozzarella, hranolky', price:199},
+    ]},
+  { id:'leguan', name:'Restaurace LEGUÁN', address:'Tř. Svornosti 15', phone:'737 387 292',
+    hours:'Pouze rozvoz', coords:[49.5904,17.2674], fav:67849, closed:false, delivery:true,
+    note:'Menu pouze na rozvoz (volat 8:30–10:00)', soup:'Gulášová (0,3l) – zdarma k menu', soupPrice:0,
+    meals:[
+      {name:'150g Kuřecí steak na grilu, hermelínová omáčka, opékané brambory', price:170},
+      {name:'250g Zeleninový salát s kuřecím masem a sýrem, česnekový dip, pečivo', price:170},
+      {name:'130g Znojemská hovězí pečínka, dušená rýže', price:170},
+      {name:'130g Selská bašta – pečená a uzená krkovička, klobáska, bystročické zelí', price:160},
+      {name:'130g Kuřecí stehenní steak na másle, bramborová kaše, coleslaw', price:160},
+      {name:'150g Smažený kuřecí řízek, bramborová kaše, okurkový salát', price:170},
+      {name:'150g Hovězí guláš na šeráku, cibule, feferonka, houskový knedlík', price:170},
+      {name:'250g Pečené kachní stehno, červené zelí, bramborový knedlík', price:180},
+    ]},
+  { id:'avion', name:'Restaurace AVION', address:'Politických vězňů 2', phone:null,
+    hours:'11:00–14:00', coords:[49.5942,17.2618], fav:73565, closed:false, delivery:false,
+    note:null, soup:'Frankfurtská', soupPrice:null,
+    meals:[
+      {name:'Smažená kuřecí kapsa Apetit se šunkou a taveným sýrem, bramborová kaše', price:135},
+      {name:'Hovězí plátek, hranolky, tatarská omáčka', price:135},
+      {name:'Smažený sýr, vařené brambory, tatarská omáčka', price:135},
+      {name:'Opékaná bavorská sekaná, šťouchané brambory, steril. okurek', price:125},
+      {name:'Pajšl na smetaně, houskové knedlíky', price:125},
+      {name:'Pestré zeleninové rizoto, strouhaný sýr', price:125},
+      {name:'Taštičky plněné jahodami s cukrem, máslem a praženou strouhankou', price:125},
+    ]},
+  { id:'volka', name:'Restaurace U ČERVENÉHO VOLKA', address:'Dolní náměstí 39', phone:'588 519 465',
+    hours:'11:00–14:30', coords:[49.5929,17.2617], fav:83022, closed:false, delivery:false,
+    note:null, soup:'Květáková krémová se sýrem, smetanou a krutonky', soupPrice:null,
+    meals:[
+      {name:'Znojemská hovězí pečeně, dušená rýže', price:179},
+      {name:'Steak z vepřové kotlety se šunkou a sázeným vejcem, hranolky', price:175},
+      {name:'Kuřecí řízečky marinované v podmáslí, vařené petrželkové brambory', price:175},
+      {name:'Špagety POMODORO s kuřecím masem, rajčata, olivy, bazalka, parmazán', price:175},
+      {name:'250g Steak DUROC z vepřové kotlety s pepřovou omáčkou ze zeleného pepře, hranolky', price:269},
+      {name:'ROYAL BACON CHEESE BURGER – hovězí 180g, grilovaná slanina, cheddar, majonéza, hranolky', price:189},
+      {name:'Velký salát Caesar – římský salát, kuřecí maso, krutony, dresing, bageta', price:189},
+      {name:'Garden Gourmet salát VEGETARIÁNSKÝ – nugety, zelenina, jogurtový dressing', price:189},
+      {name:'Garden Gourmet BURGER VEGETARIÁNSKÝ – sója, zelenina, koprem dressing, hranolky', price:189},
+    ]},
+  { id:'moritz', name:'Pivovar MORITZ', address:'Nešverova 2', phone:'721 468 732',
+    hours:'11:00–14:00', coords:[49.5959,17.2598], fav:85110, closed:false, delivery:true,
+    note:'Rozvoz zdarma, objednávky 8:00–9:45', soup:'Čočková s vejcem (0,3l)', soupPrice:null,
+    meals:[
+      {name:'150g Anglický roastbeef s opékanými bramborami a tatarskou omáčkou', price:185},
+      {name:'150g Řízečky z vepřové panenky s bramborovým salátem', price:179},
+      {name:'200g Pečené kuřecí stehýnko s jasmínovou rýží a sterilovaným okurkem', price:179},
+      {name:'300g Fazolové lusky na kyselo s vařenými bramborami a vařeným vejcem', price:179},
+      {name:'300g Těstovinový salát se zeleninou, šunkou, sýrem Eidam a dressingem', price:179},
+    ]},
+  { id:'slodom', name:'Restaurace Slovanský dům', address:'Hynaisova 11', phone:'602 790 974',
+    hours:'11:00–15:00', coords:[49.5951,17.2566], fav:65002, closed:false, delivery:false,
+    note:null, soup:'Mrkvový krém se zázvorem', soupPrice:null,
+    meals:[
+      {name:'Karbanátky z mletého masa, šťouchané brambory, jarní cibulka, hořčice', price:159},
+      {name:'Tažený hovězí karabáček, jasmínová rýže s hráškem', price:169},
+      {name:'Pasta Alfredo s kuřecím masem, sýr Gran Biraghi', price:159},
+    ]},
+  { id:'blues', name:'Blues Rock CAFE', address:'Bořivojova 1', phone:'608 131 358',
+    hours:'Dnes od 15:00', coords:[49.5937,17.2578], fav:63622, closed:true, delivery:false,
+    note:'Dnes otevírají v 15:00 – polední menu nedostupné', soup:null, soupPrice:null, meals:[]},
+  { id:'aqua', name:'AQUA RESTAURANT', address:'Kafkova 526/21, Slavonín', phone:'588 517 792',
+    hours:'11:00–14:30', coords:[49.5798,17.2542], fav:74098, closed:false, delivery:true,
+    note:null, soup:'Kulajda / Hovězí vývar s těstovinou', soupPrice:29,
+    meals:[
+      {name:'150g Kuřecí steak na houbové omáčce, pečené grenaille', price:145},
+      {name:'150g Vepřová plec na slanině, dušená rýže', price:145},
+      {name:'150g Pečené uzené maso, bramborová kaše, opečená cibulka, kyselá okurka', price:145},
+      {name:'Tip dne: Gnochi s vepřovou panenkou, houbová omáčka, sýr Gran Moravia', price:199},
+    ]},
+  { id:'uanci', name:'Restaurace U Anči', address:'Na Trati 59', phone:'585 425 165',
+    hours:'10:30–19:30', coords:[49.5822,17.2430], fav:78556, closed:false, delivery:true,
+    note:'Rozvoz přes Foodora & Wolt', soup:'Krkonošská cibulačka s hovězím masem', soupPrice:40,
+    meals:[
+      {name:'Špagety s hovězím masem sypané sýrem', price:155},
+      {name:'Vepřové nudličky s nivou, brambor', price:155},
+      {name:'Azu po tatarsku, rýže', price:155},
+      {name:'Smažený hermelín, brambor, tatarka', price:155},
+      {name:'Kančí guláš, knedlík', price:155},
+      {name:'Pikantní kuřecí směs, hranolky', price:155},
+      {name:'Moravský vrabec, zelí, knedlík', price:155},
+      {name:'1/4 Pečená kachna, červené zelí, houskový knedlík', price:185},
+    ]},
+  { id:'asado', name:'asado grill', address:'Horní náměstí 21', phone:'722 290 091',
+    hours:'11:00–15:00', coords:[49.5936,17.2609], fav:644, closed:false, delivery:false,
+    note:null, soup:'Kapustová s klobáskou / Krém z červených fazolí s kokosem', soupPrice:59,
+    meals:[
+      {name:'Telecí ptáček, slaninová rýže, vaječná sedlina', price:229},
+      {name:'Hovězí nudličky z pravé svíčkové, lesní hřiby, šťouchaný brambor s cibulkou', price:239},
+      {name:'Mahi mahi z grilu, omáčka z kafírové limety, zeleninový couscous', price:229},
+      {name:'Kuřecí stripsy v panko strouhance, listový salát, jogurtový dresink', price:229},
+      {name:'Chef\'s menu: Rump steak (ČESTR), omáčka z pálené papriky, karamelizovaná cibule', price:399},
+    ]},
+  { id:'svpivovar', name:'Svatováclavský pivovar', address:'Mariánská 4', phone:'585 207 517',
+    hours:'11:00–14:30', coords:[49.5939,17.2605], fav:73786, closed:false, delivery:false,
+    note:null, soup:'Uzená s masem a kroupami', soupPrice:null,
+    meals:[
+      {name:'Fazolový guláš s klobásou, chléb', price:170},
+      {name:'Sekaná pečeně, bramborová kaše, kyselý okurek', price:175},
+      {name:'Kuřecí steak, sázené vejce, vařený brambor', price:180},
+    ]},
+  { id:'lobster', name:'LOBSTER – Family Restaurant', address:'Polská 1, Galerie Šantovka', phone:'730 892 286',
+    hours:'11:00–15:00', coords:[49.5821,17.2693], fav:54685, closed:false, delivery:false,
+    note:null, soup:'Krémová houbová polévka – krutony, pažitka', soupPrice:55,
+    meals:[
+      {name:'Bucatini lardiata – špek lardo, rajčata, parmazán', price:195},
+      {name:'Salát s fenyklem a lososem gravlax', price:295},
+      {name:'Kuřecí supreme s N\'Duja olejem – polosušená rajčata, pečená cuketa, celerové pyré', price:235},
+      {name:'Roastbeef se smaženými bramborami s paprikou – kaparová majonéza', price:245},
+      {name:'Smažená treska v bylinkové strouhance – bramborová kaše, nakládaná cibule', price:235},
+      {name:'Telecí pavouček – BBQ demi glace, kukuřičné ribsy', price:335},
+      {name:'Pizza Margherita – rajčata San Marzano, mozzarella, bazalka', price:175},
+      {name:'Pizza Bianca s lososem – mozzarella, bazalka, parmazán', price:195},
+      {name:'Pizza Con cotto e oliva – San Marzano, mozzarella, šunka, olivy', price:195},
+      {name:'Pizza Quattro formaggi – mozzarella, gorgonzola, taleggio, pecorino', price:205},
+    ]},
+  { id:'jelena', name:'RESTAURACE U JELENA', address:'Hodolanská 25', phone:'775 612 585',
+    hours:'11:00–14:00', coords:[49.5878,17.2748], fav:71241, closed:false, delivery:true,
+    note:'Rozvoz po Olomouci zdarma', soup:'Kapustová se slaninkou / Hovězí vývar s nudlemi / Česneková flamendr', soupPrice:null,
+    meals:[
+      {name:'Masové kuličky v rajské omáčce, těstoviny', price:170},
+      {name:'Kuřecí plátek s žampionovým přelivem, hranolky', price:170},
+      {name:'Čočka na kyselo, sázené vejce, kousek kabanosu, steril. okurek, chléb', price:170},
+      {name:'Smažený květák, vařené brambory, tatarská omáčka', price:170},
+    ]},
+];
+
+// ── SIMILARITY GROUPS ───────────────────────────────────────────────────────
+const SIM_GROUPS = [
+  {id:'syr',    label:'🧀 Smažený sýr',  kws:['smažený sýr','smaž. sýr','smažené sýr','camembert','hermelín','tvarůžky'], color:'#c8740a', bg:'rgba(200,116,10,0.12)'},
+  {id:'kachna', label:'🦆 Kachna',        kws:['kachna','kachní'], color:'#7a5014', bg:'rgba(122,80,20,0.12)'},
+  {name:'caesar',label:'🥗 Caesar',       kws:['caesar'], color:'#2a6a2a', bg:'rgba(42,106,42,0.12)'},
+  {id:'gulas',  label:'🫕 Guláš',         kws:['guláš','gulášek'], color:'#8b2a2a', bg:'rgba(139,42,42,0.12)'},
+  {id:'rizek',  label:'🥩 Řízek',         kws:['řízek','řízečky','řízků'], color:'#7a3a1a', bg:'rgba(122,58,26,0.12)'},
+  {id:'pizza',  label:'🍕 Pizza',         kws:['pizza'], color:'#b02020', bg:'rgba(176,32,32,0.12)'},
+  {id:'burger', label:'🍔 Burger',        kws:['burger','hamburger'], color:'#c04010', bg:'rgba(192,64,16,0.12)'},
+  {id:'pasta',  label:'🍝 Pasta',         kws:['pasta','špagety','těstoviny','bucatini','penne','tagliatelle'], color:'#1a5a8a', bg:'rgba(26,90,138,0.12)'},
+  {id:'losos',  label:'🐟 Losos',         kws:['losos','lososa'], color:'#c03030', bg:'rgba(192,48,48,0.12)'},
+  {id:'roastbeef',label:'🥩 Roastbeef',   kws:['roastbeef'], color:'#6a3010', bg:'rgba(106,48,16,0.12)'},
+  {id:'rizoto', label:'🍚 Rizoto',        kws:['rizoto','risotto'], color:'#4a6a2a', bg:'rgba(74,106,42,0.12)'},
+  {id:'svickova',label:'🥩 Svíčková',     kws:['svíčkové','svíčková'], color:'#5a2a0a', bg:'rgba(90,42,10,0.12)'},
+];
+
+// ── UTILITIES ────────────────────────────────────────────────────────────────
+function haversine([la1,lo1],[la2,lo2]) {
+  const R=6371, toRad=x=>x*Math.PI/180;
+  const dLa=toRad(la2-la1), dLo=toRad(lo2-lo1);
+  const a=Math.sin(dLa/2)**2+Math.cos(toRad(la1))*Math.cos(toRad(la2))*Math.sin(dLo/2)**2;
+  return R*2*Math.asin(Math.sqrt(a));
+}
+
+function distBadge(km) {
+  const m = Math.round(km*1000);
+  const label = m<1000 ? m+'m' : (km).toFixed(1)+'km';
+  if (km<0.6) return `<span class="badge badge-dist-near">📍 ${label}</span>`;
+  if (km<1.2) return `<span class="badge badge-dist-mid">📍 ${label}</span>`;
+  return `<span class="badge badge-dist-far">📍 ${label}</span>`;
+}
+
+// Build similarity map: mealKey → [simTag, ...]
+function buildSimMap(restaurants) {
+  const grouped = {}; // groupId → [{ri, mi, name}]
+  restaurants.forEach((r, ri) => {
+    r.meals.forEach((m, mi) => {
+      const lower = m.name.toLowerCase();
+      SIM_GROUPS.forEach(g => {
+        if (g.kws.some(kw => lower.includes(kw))) {
+          (grouped[g.id] = grouped[g.id]||[]).push({ri, mi, rName:r.name, g});
+        }
+      });
+    });
+  });
+  const simMap = {};
+  Object.values(grouped).forEach(entries => {
+    const uniqueR = [...new Set(entries.map(e=>e.ri))];
+    if (uniqueR.length < 2) return;
+    entries.forEach(({ri,mi,g}) => {
+      const key = `${ri}-${mi}`;
+      (simMap[key]=simMap[key]||[]).push({...g, count:uniqueR.length});
+    });
+  });
+  return simMap;
+}
+
+// ── SORT & RENDER ────────────────────────────────────────────────────────────
+let sortMode = 'dist';
+let rankResults = {}; // key → html string
+
+function setSort(mode, el) {
+  sortMode = mode;
+  document.querySelectorAll('.filter-btn').forEach(b=>b.classList.remove('active'));
+  el.classList.add('active');
+  renderGrid();
+}
+
+function getSorted() {
+  return [...RESTAURANTS].sort((a,b) => {
+    if (sortMode==='dist') return haversine(HOME,a.coords)-haversine(HOME,b.coords);
+    if (sortMode==='price') {
+      const pa = a.closed||!a.meals.length ? 9999 : Math.min(...a.meals.map(m=>m.price||9999));
+      const pb = b.closed||!b.meals.length ? 9999 : Math.min(...b.meals.map(m=>m.price||9999));
+      return pa-pb;
+    }
+    if (sortMode==='pop') return b.fav-a.fav;
+    return 0;
+  });
+}
+
+function renderGrid() {
+  const sorted = getSorted();
+  const simMap = buildSimMap(sorted);
+  // Re-index after sort
+  const grid = document.getElementById('grid');
+  grid.innerHTML = '';
+
+  sorted.forEach((r, ri) => {
+    const km = haversine(HOME, r.coords);
+    const minPrice = r.meals.length ? Math.min(...r.meals.map(m=>m.price||9999)) : null;
+
+    let hoursHtml = r.closed
+      ? `<span class="badge badge-closed">🔒 ${r.hours}</span>`
+      : r.delivery && r.hours==='Pouze rozvoz'
+        ? `<span class="badge badge-delivery">🚗 Pouze rozvoz</span>`
+        : `<span class="badge badge-hours">🕐 ${r.hours}</span>`;
+    if (!r.closed && r.delivery) hoursHtml += `<span class="badge badge-delivery">🚗 Rozvoz</span>`;
+
+    const soupHtml = r.soup ? `
+      <div class="soup-row">
+        <span class="soup-label">Polévka</span>
+        <span class="soup-name">${r.soup}</span>
+        <span class="soup-price">${r.soupPrice===0?'zdarma':r.soupPrice?r.soupPrice+' Kč':''}</span>
+      </div>` : '';
+
+    let mealsHtml = '';
+    if (r.closed) {
+      mealsHtml = `<div class="closed-note">Dnes zavřeno – ${r.note||''}</div>`;
+    } else {
+      r.meals.forEach((m, mi) => {
+        const key = `${ri}-${mi}`;
+        const tags = (simMap[key]||[]).map(sg=>
+          `<span class="sim-tag" style="background:${sg.bg};color:${sg.color};border:1px solid ${sg.color}40">${sg.label}</span>`
+        ).join('');
+        const tagsHtml = tags ? `<div class="meal-tags">${tags}</div>` : '';
+        const rankKey = `${r.id}-${mi}`;
+        const resultHtml = rankResults[rankKey]
+          ? `<div class="rank-result visible" id="rr-${rankKey}">${rankResults[rankKey]}</div>`
+          : `<div class="rank-result" id="rr-${rankKey}"></div>`;
+
+        mealsHtml += `
+          <div class="meal-row">
+            <div class="meal-info">
+              <div class="meal-name">${m.name}</div>
+              ${tagsHtml}
+            </div>
+            <div class="meal-right">
+              <span class="meal-price">${m.price?m.price+' Kč':'–'}</span>
+              <button class="rank-btn" id="rb-${rankKey}" onclick="rankMeal('${rankKey}','${r.name.replace(/'/g,"\\'")}','${m.name.replace(/'/g,"\\'").replace(/"/g,'&quot;')}',${m.price||0})">🏆 Ohodnotit</button>
+            </div>
+          </div>
+          ${resultHtml}`;
+      });
+    }
+
+    const noteHtml = (r.note && !r.closed) ? `<div style="padding:8px 20px;font-size:11px;color:#7a5020;font-style:italic;border-bottom:1px solid rgba(180,130,40,0.1)">${r.note}</div>` : '';
+
+    const card = document.createElement('div');
+    card.className = `card glass${r.closed?' closed':''}`;
+    card.innerHTML = `
+      <div class="card-header">
+        <div class="card-name">${r.name}</div>
+        <div class="card-address">${r.address}${r.phone?` · ☎ ${r.phone}`:''}</div>
+        <div class="card-meta">
+          ${distBadge(km)}
+          ${hoursHtml}
+          ${minPrice&&!r.closed?`<span class="badge" style="background:rgba(100,150,100,0.15);color:#2a5a2a;border:1px solid rgba(100,150,100,0.3)">od ${minPrice} Kč</span>`:''}
+        </div>
+      </div>
+      ${soupHtml}
+      ${noteHtml}
+      <div class="meals-list">${mealsHtml}</div>`;
+    grid.appendChild(card);
+  });
+
+  document.getElementById('rest-count').textContent =
+    RESTAURANTS.filter(r=>!r.closed).length + ' restaurací dnes';
+}
+
+// ── RANKING ──────────────────────────────────────────────────────────────────
+async function rankMeal(rankKey, restaurant, mealName, price) {
+  const btn = document.getElementById('rb-'+rankKey);
+  const resultEl = document.getElementById('rr-'+rankKey);
+  if (!btn||!resultEl) return;
+  btn.textContent = '⏳';
+  btn.disabled = true;
+
+  const prompt = `Rate this Czech lunch meal concisely.
+
+Restaurant: ${restaurant}
+Meal: ${mealName}
+Price: ${price} CZK
+
+Respond in exactly this format (plain text, under 55 words total):
+🥗 Health: X/5 — [one short reason]
+🍺 Pub-heaviness: X/5 — [how greasy/heavy vs light]
+💡 Verdict: [one punchy sentence]
+
+Context: pub-style Czech problems = heavy gravies, deep-fried everything, minimal vegetables, excess dumplings/bread, high saturated fat.`;
+
+  try {
+    const result = await window.cowork.askClaude(prompt, []);
+    const html = `<div class="rank-meal-name">${mealName}</div>${result.replace(/\n/g,'<br>')}`;
+    rankResults[rankKey] = html;
+    resultEl.innerHTML = html;
+    resultEl.classList.add('visible');
+    btn.textContent = '✓ Hotovo';
+  } catch(e) {
+    resultEl.innerHTML = `<div style="color:#8b2a2a">Ohodnocení se nezdařilo: ${e.message||'chyba'}</div>`;
+    resultEl.classList.add('visible');
+    btn.textContent = '🏆 Zkusit znovu';
+    btn.disabled = false;
+  }
+}
+
+// ── LIVE REFRESH ─────────────────────────────────────────────────────────────
+async function loadData() {
+  document.getElementById('status').textContent = 'Načítám aktuální menu z olomouc.cz…';
+  document.getElementById('loading').style.display = 'flex';
+  try {
+    const raw = await window.cowork.callMcpTool('mcp__Windows-MCP__Scrape', {
+      url: 'https://www.olomouc.cz/poledni-menu',
+      query: 'restaurant meals prices lunch menu today',
+      use_sampling: true
+    });
+    const text = typeof raw === 'string' ? raw : (raw?.result || JSON.stringify(raw));
+    // Use askClaude to extract summary of what changed
+    const summary = await window.cowork.askClaude(
+      `From this Olomouc lunch menu page content, list any restaurants NOT already in this list: SENIMO, VIKTORIA, CARUSO, U RYTÍŘE, PORTO, LEGUÁN, AVION, U ČERVENÉHO VOLKA, MORITZ, SLOVANSKÝ DŮM, BLUES ROCK CAFE, AQUA, U ANČI, ASADO GRILL, JELENA, SVATOVÁCLAVSKÝ PIVOVAR, LOBSTER. If all are present and data looks fresh, reply: "Data aktuální." Otherwise list new restaurants with their menus briefly.`,
+      [{type:'text', text: text.substring(0,8000)}]
+    );
+    document.getElementById('status').textContent = '✓ Aktualizováno · ' + summary;
+  } catch(e) {
+    document.getElementById('status').textContent = 'Aktualizace se nezdařila – zobrazena uložená data. (' + (e.message||'chyba') + ')';
+  }
+  document.getElementById('loading').style.display = 'none';
+}
+
+// ── INIT ──────────────────────────────────────────────────────────────────────
+(function init() {
+  const now = new Date();
+  const days = ['neděle','pondělí','úterý','středa','čtvrtek','pátek','sobota'];
+  const months = ['ledna','února','března','dubna','května','června','července','srpna','září','října','listopadu','prosince'];
+  document.getElementById('date-subtitle').textContent =
+    `${days[now.getDay()]} ${now.getDate()}. ${months[now.getMonth()]} ${now.getFullYear()}`;
+  renderGrid();
+})();
+</script>
+</body>
+</html>
